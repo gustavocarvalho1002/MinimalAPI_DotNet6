@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MinimalAPI_DotNet6.Data;
 using MinimalAPI_DotNet6.Model;
+using MiniValidation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,12 +47,65 @@ app.MapPost("/supplier", async (
     MinimalContextDb context,
     Supplier supplier) =>
     {
+        if (!MiniValidator.TryValidate(supplier, out var errors))
+            return Results.ValidationProblem(errors);
+
         context.Suppliers.Add(supplier);
         var result = await context.SaveChangesAsync();
+
+        return result > 0
+            ? Results.Created($"/supplier/{supplier.Id}", supplier)
+            : Results.BadRequest("An error ocurred while trying to save supplier");
     })
     .Produces<Supplier>(StatusCodes.Status201Created)
     .Produces(StatusCodes.Status400BadRequest)
     .WithName("PostSupplier")
-    .WithTags("Supplier"); ;
+    .WithTags("Supplier");
+
+app.MapPut("/supplier/{id}", async (
+    Guid id,
+    MinimalContextDb context,
+    Supplier supplier) =>
+{
+    var supplierFromDatabase = await context.Suppliers.AsNoTracking<Supplier>().FirstOrDefaultAsync(s => s.Id == id);
+
+    if (supplierFromDatabase == null)
+        return Results.NotFound($"No supplier with id '{supplier.Id}' was found");
+
+    if (!MiniValidator.TryValidate(supplier, out var errors))
+        return Results.ValidationProblem(errors);
+
+    context.Suppliers.Update(supplier);
+    var result = await context.SaveChangesAsync();
+
+    return result > 0
+        ? Results.NoContent()
+        : Results.BadRequest("An error ocurred while trying to save supplier");
+})
+    .Produces<Supplier>(StatusCodes.Status201Created)
+    .Produces(StatusCodes.Status400BadRequest)
+    .WithName("PutSupplier")
+    .WithTags("Supplier");
+
+
+app.MapDelete("/supplier/{id}", async (
+    Guid id,
+    MinimalContextDb context) =>
+    {
+        var supplierFromDatabase = await context.Suppliers.FindAsync(id);
+        if (supplierFromDatabase == null)
+            return Results.NotFound();
+
+        context.Suppliers.Remove(supplierFromDatabase);
+        var result = await context.SaveChangesAsync();
+
+        return result > 0
+        ? Results.NoContent()
+        : Results.BadRequest("An error ocurred while trying to delete supplier");
+    }).Produces(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status204NoContent)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithName("DeleteSupplier")
+    .WithTags("Supplier");
 
 app.Run();
